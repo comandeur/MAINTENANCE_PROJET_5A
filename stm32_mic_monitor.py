@@ -454,8 +454,23 @@ def main():
 
     # Connexion série
     if not monitor.connect():
-        print("Impossible de se connecter au port série!")
-        print(f"Vérifiez que {args.port} est disponible et que vous avez les permissions nécessaires.")
+        print("❌ Impossible de se connecter au port série!")
+        print(f"   Port demandé: {args.port}")
+        print("\n💡 Solutions:")
+        print("   1. Listez les ports disponibles avec:")
+        print("      python detect_ports.py")
+        print("\n   2. Spécifiez le bon port avec --port")
+        import platform
+        if platform.system() == 'Windows':
+            print("      Exemple Windows: python stm32_mic_monitor.py --port COM3")
+        elif platform.system() == 'Linux':
+            print("      Exemple Linux:   python stm32_mic_monitor.py --port /dev/ttyUSB0")
+        elif platform.system() == 'Darwin':
+            print("      Exemple macOS:   python stm32_mic_monitor.py --port /dev/cu.usbserial-0001")
+        print("\n   3. Vérifiez que:")
+        print("      - La carte STM32 est bien branchée")
+        print("      - Les drivers sont installés")
+        print("      - Aucun autre programme n'utilise le port")
         return
 
     # Démarrer la lecture
