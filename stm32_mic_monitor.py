@@ -33,10 +33,10 @@ class STM32MicMonitor:
         self.baudrate = baudrate
         self.max_points = max_points
 
-        # Données pour chaque microphone (A0-A5)
+        # Données pour chaque microphone (A0-A5) - chaque micro a son propre historique
         self.num_mics = 6
         self.data = {
-            'time': deque(maxlen=max_points),
+            'time': [deque(maxlen=max_points) for _ in range(self.num_mics)],
             'rms': [deque(maxlen=max_points) for _ in range(self.num_mics)],
             'min': [deque(maxlen=max_points) for _ in range(self.num_mics)],
             'max': [deque(maxlen=max_points) for _ in range(self.num_mics)],
@@ -104,7 +104,6 @@ class STM32MicMonitor:
     def read_serial(self):
         """Thread de lecture des données série"""
         self.running = True
-        data_buffer = [None] * self.num_mics
 
         while self.running:
             try:
@@ -115,29 +114,22 @@ class STM32MicMonitor:
                         parsed = self.parse_line(line)
                         if parsed:
                             mic_num = parsed['mic']
-                            data_buffer[mic_num] = parsed
+                            current_time = time.time() - self.start_time
 
-                            # Si on a reçu toutes les données (A0-A5), on les stocke
-                            if all(d is not None for d in data_buffer):
-                                current_time = time.time() - self.start_time
-                                self.data['time'].append(current_time)
+                            # Ajouter immédiatement les données pour ce microphone
+                            self.data['time'][mic_num].append(current_time)
+                            self.data['rms'][mic_num].append(parsed['rms'])
+                            self.data['min'][mic_num].append(parsed['min'])
+                            self.data['max'][mic_num].append(parsed['max'])
+                            self.data['amplitude'][mic_num].append(parsed['amplitude'])
 
-                                for i, data_point in enumerate(data_buffer):
-                                    self.data['rms'][i].append(data_point['rms'])
-                                    self.data['min'][i].append(data_point['min'])
-                                    self.data['max'][i].append(data_point['max'])
-                                    self.data['amplitude'][i].append(data_point['amplitude'])
-
-                                # Calcul de la fréquence d'échantillonnage
-                                self.sample_count += 1
-                                elapsed = time.time() - self.last_sample_time
-                                if elapsed >= 1.0:  # Mise à jour chaque seconde
-                                    self.sampling_freq = self.sample_count / elapsed
-                                    self.sample_count = 0
-                                    self.last_sample_time = time.time()
-
-                                # Réinitialiser le buffer
-                                data_buffer = [None] * self.num_mics
+                            # Calcul de la fréquence d'échantillonnage
+                            self.sample_count += 1
+                            elapsed = time.time() - self.last_sample_time
+                            if elapsed >= 1.0:  # Mise à jour chaque seconde
+                                self.sampling_freq = self.sample_count / elapsed
+                                self.sample_count = 0
+                                self.last_sample_time = time.time()
 
                 time.sleep(0.001)  # Petite pause pour éviter de surcharger le CPU
 
@@ -341,58 +333,54 @@ class MonitorGUI:
 
     def update_plots(self):
         """Mise à jour périodique des graphes"""
-        if len(self.monitor.data['time']) > 0:
-            times = list(self.monitor.data['time'])
+        # Mise à jour onglet RMS
+        for i, ax in enumerate(self.rms_axes):
+            ax.clear()
+            ax.set_title(f'Microphone A{i} - RMS', fontweight='bold')
+            ax.set_xlabel('Temps (s)')
+            ax.set_ylabel('RMS (mV)')
+            ax.grid(True, alpha=0.3)
+            if len(self.monitor.data['rms'][i]) > 0:
+                times_i = list(self.monitor.data['time'][i])
+                ax.plot(times_i, list(self.monitor.data['rms'][i]),
+                       'b-', linewidth=1.5)
+        self.rms_canvas.draw()
 
-            # Mise à jour onglet RMS
-            for i, ax in enumerate(self.rms_axes):
-                ax.clear()
-                ax.set_title(f'Microphone A{i} - RMS', fontweight='bold')
-                ax.set_xlabel('Temps (s)')
-                ax.set_ylabel('RMS (mV)')
-                ax.grid(True, alpha=0.3)
-                if len(self.monitor.data['rms'][i]) > 0:
-                    # Synchroniser les longueurs
-                    data_len = min(len(times), len(self.monitor.data['rms'][i]))
-                    ax.plot(times[:data_len], list(self.monitor.data['rms'][i])[:data_len],
-                           'b-', linewidth=1.5)
-            self.rms_canvas.draw()
+        # Mise à jour onglet MAX/MIN
+        for i, ax in enumerate(self.minmax_axes):
+            ax.clear()
+            ax.set_title(f'Microphone A{i} - MAX/MIN', fontweight='bold')
+            ax.set_xlabel('Temps (s)')
+            ax.set_ylabel('Valeur ADC')
+            ax.grid(True, alpha=0.3)
+            if len(self.monitor.data['max'][i]) > 0:
+                times_i = list(self.monitor.data['time'][i])
+                ax.plot(times_i, list(self.monitor.data['max'][i]),
+                       'r-', linewidth=1.5, label='MAX')
+                ax.plot(times_i, list(self.monitor.data['min'][i]),
+                       'g-', linewidth=1.5, label='MIN')
+                ax.legend()
+        self.minmax_canvas.draw()
 
-            # Mise à jour onglet MAX/MIN
-            for i, ax in enumerate(self.minmax_axes):
-                ax.clear()
-                ax.set_title(f'Microphone A{i} - MAX/MIN', fontweight='bold')
-                ax.set_xlabel('Temps (s)')
-                ax.set_ylabel('Valeur ADC')
-                ax.grid(True, alpha=0.3)
-                if len(self.monitor.data['max'][i]) > 0:
-                    # Synchroniser les longueurs
-                    data_len = min(len(times), len(self.monitor.data['max'][i]),
-                                  len(self.monitor.data['min'][i]))
-                    ax.plot(times[:data_len], list(self.monitor.data['max'][i])[:data_len],
-                           'r-', linewidth=1.5, label='MAX')
-                    ax.plot(times[:data_len], list(self.monitor.data['min'][i])[:data_len],
-                           'g-', linewidth=1.5, label='MIN')
-                    ax.legend()
-            self.minmax_canvas.draw()
+        # Mise à jour onglet amplitude
+        for i, ax in enumerate(self.amplitude_axes):
+            ax.clear()
+            ax.set_title(f'Microphone A{i} - Amplitude', fontweight='bold')
+            ax.set_xlabel('Temps (s)')
+            ax.set_ylabel('Amplitude (mV)')
+            ax.grid(True, alpha=0.3)
+            if len(self.monitor.data['amplitude'][i]) > 0:
+                times_i = list(self.monitor.data['time'][i])
+                ax.plot(times_i, list(self.monitor.data['amplitude'][i]),
+                       'purple', linewidth=1.5)
+        self.amplitude_canvas.draw()
 
-            # Mise à jour onglet amplitude
-            for i, ax in enumerate(self.amplitude_axes):
-                ax.clear()
-                ax.set_title(f'Microphone A{i} - Amplitude', fontweight='bold')
-                ax.set_xlabel('Temps (s)')
-                ax.set_ylabel('Amplitude (mV)')
-                ax.grid(True, alpha=0.3)
-                if len(self.monitor.data['amplitude'][i]) > 0:
-                    # Synchroniser les longueurs
-                    data_len = min(len(times), len(self.monitor.data['amplitude'][i]))
-                    ax.plot(times[:data_len], list(self.monitor.data['amplitude'][i])[:data_len],
-                           'purple', linewidth=1.5)
-            self.amplitude_canvas.draw()
+        # Mise à jour des vues individuelles
+        for mic_num, axes in enumerate(self.single_mic_axes):
+            ax_rms, ax_amp, ax_max, ax_min = axes
 
-            # Mise à jour des vues individuelles
-            for mic_num, axes in enumerate(self.single_mic_axes):
-                ax_rms, ax_amp, ax_max, ax_min = axes
+            if len(self.monitor.data['rms'][mic_num]) > 0:
+                times_mic = list(self.monitor.data['time'][mic_num])
 
                 # RMS
                 ax_rms.clear()
@@ -400,11 +388,8 @@ class MonitorGUI:
                 ax_rms.set_xlabel('Temps (s)')
                 ax_rms.set_ylabel('RMS (mV)')
                 ax_rms.grid(True, alpha=0.3)
-                if len(self.monitor.data['rms'][mic_num]) > 0:
-                    # Synchroniser les longueurs
-                    data_len = min(len(times), len(self.monitor.data['rms'][mic_num]))
-                    ax_rms.plot(times[:data_len], list(self.monitor.data['rms'][mic_num])[:data_len],
-                               'b-', linewidth=1.5)
+                ax_rms.plot(times_mic, list(self.monitor.data['rms'][mic_num]),
+                           'b-', linewidth=1.5)
 
                 # Crête-à-crête
                 ax_amp.clear()
@@ -412,11 +397,8 @@ class MonitorGUI:
                 ax_amp.set_xlabel('Temps (s)')
                 ax_amp.set_ylabel('Amplitude (mV)')
                 ax_amp.grid(True, alpha=0.3)
-                if len(self.monitor.data['amplitude'][mic_num]) > 0:
-                    # Synchroniser les longueurs
-                    data_len = min(len(times), len(self.monitor.data['amplitude'][mic_num]))
-                    ax_amp.plot(times[:data_len], list(self.monitor.data['amplitude'][mic_num])[:data_len],
-                               'purple', linewidth=1.5)
+                ax_amp.plot(times_mic, list(self.monitor.data['amplitude'][mic_num]),
+                           'purple', linewidth=1.5)
 
                 # MAX
                 ax_max.clear()
@@ -424,11 +406,8 @@ class MonitorGUI:
                 ax_max.set_xlabel('Temps (s)')
                 ax_max.set_ylabel('MAX (ADC)')
                 ax_max.grid(True, alpha=0.3)
-                if len(self.monitor.data['max'][mic_num]) > 0:
-                    # Synchroniser les longueurs
-                    data_len = min(len(times), len(self.monitor.data['max'][mic_num]))
-                    ax_max.plot(times[:data_len], list(self.monitor.data['max'][mic_num])[:data_len],
-                               'r-', linewidth=1.5)
+                ax_max.plot(times_mic, list(self.monitor.data['max'][mic_num]),
+                           'r-', linewidth=1.5)
 
                 # MIN
                 ax_min.clear()
@@ -436,11 +415,8 @@ class MonitorGUI:
                 ax_min.set_xlabel('Temps (s)')
                 ax_min.set_ylabel('MIN (ADC)')
                 ax_min.grid(True, alpha=0.3)
-                if len(self.monitor.data['min'][mic_num]) > 0:
-                    # Synchroniser les longueurs
-                    data_len = min(len(times), len(self.monitor.data['min'][mic_num]))
-                    ax_min.plot(times[:data_len], list(self.monitor.data['min'][mic_num])[:data_len],
-                               'g-', linewidth=1.5)
+                ax_min.plot(times_mic, list(self.monitor.data['min'][mic_num]),
+                           'g-', linewidth=1.5)
 
                 self.single_mic_canvas[mic_num].draw()
 
