@@ -327,7 +327,10 @@ class MonitorGUI:
                 ax.set_ylabel('RMS (mV)')
                 ax.grid(True, alpha=0.3)
                 if len(self.monitor.data['rms'][i]) > 0:
-                    ax.plot(times, list(self.monitor.data['rms'][i]), 'b-', linewidth=1.5)
+                    # Synchroniser les longueurs
+                    data_len = min(len(times), len(self.monitor.data['rms'][i]))
+                    ax.plot(times[:data_len], list(self.monitor.data['rms'][i])[:data_len],
+                           'b-', linewidth=1.5)
             self.rms_canvas.draw()
 
             # Mise à jour onglet MAX/MIN
@@ -338,10 +341,13 @@ class MonitorGUI:
                 ax.set_ylabel('Valeur ADC')
                 ax.grid(True, alpha=0.3)
                 if len(self.monitor.data['max'][i]) > 0:
-                    ax.plot(times, list(self.monitor.data['max'][i]), 'r-',
-                           linewidth=1.5, label='MAX')
-                    ax.plot(times, list(self.monitor.data['min'][i]), 'g-',
-                           linewidth=1.5, label='MIN')
+                    # Synchroniser les longueurs
+                    data_len = min(len(times), len(self.monitor.data['max'][i]),
+                                  len(self.monitor.data['min'][i]))
+                    ax.plot(times[:data_len], list(self.monitor.data['max'][i])[:data_len],
+                           'r-', linewidth=1.5, label='MAX')
+                    ax.plot(times[:data_len], list(self.monitor.data['min'][i])[:data_len],
+                           'g-', linewidth=1.5, label='MIN')
                     ax.legend()
             self.minmax_canvas.draw()
 
@@ -353,7 +359,9 @@ class MonitorGUI:
                 ax.set_ylabel('Amplitude (mV)')
                 ax.grid(True, alpha=0.3)
                 if len(self.monitor.data['amplitude'][i]) > 0:
-                    ax.plot(times, list(self.monitor.data['amplitude'][i]),
+                    # Synchroniser les longueurs
+                    data_len = min(len(times), len(self.monitor.data['amplitude'][i]))
+                    ax.plot(times[:data_len], list(self.monitor.data['amplitude'][i])[:data_len],
                            'purple', linewidth=1.5)
             self.amplitude_canvas.draw()
 
@@ -368,7 +376,9 @@ class MonitorGUI:
                 ax_rms.set_ylabel('RMS (mV)')
                 ax_rms.grid(True, alpha=0.3)
                 if len(self.monitor.data['rms'][mic_num]) > 0:
-                    ax_rms.plot(times, list(self.monitor.data['rms'][mic_num]),
+                    # Synchroniser les longueurs
+                    data_len = min(len(times), len(self.monitor.data['rms'][mic_num]))
+                    ax_rms.plot(times[:data_len], list(self.monitor.data['rms'][mic_num])[:data_len],
                                'b-', linewidth=1.5)
 
                 # Crête-à-crête
@@ -378,7 +388,9 @@ class MonitorGUI:
                 ax_amp.set_ylabel('Amplitude (mV)')
                 ax_amp.grid(True, alpha=0.3)
                 if len(self.monitor.data['amplitude'][mic_num]) > 0:
-                    ax_amp.plot(times, list(self.monitor.data['amplitude'][mic_num]),
+                    # Synchroniser les longueurs
+                    data_len = min(len(times), len(self.monitor.data['amplitude'][mic_num]))
+                    ax_amp.plot(times[:data_len], list(self.monitor.data['amplitude'][mic_num])[:data_len],
                                'purple', linewidth=1.5)
 
                 # MAX
@@ -388,7 +400,9 @@ class MonitorGUI:
                 ax_max.set_ylabel('MAX (ADC)')
                 ax_max.grid(True, alpha=0.3)
                 if len(self.monitor.data['max'][mic_num]) > 0:
-                    ax_max.plot(times, list(self.monitor.data['max'][mic_num]),
+                    # Synchroniser les longueurs
+                    data_len = min(len(times), len(self.monitor.data['max'][mic_num]))
+                    ax_max.plot(times[:data_len], list(self.monitor.data['max'][mic_num])[:data_len],
                                'r-', linewidth=1.5)
 
                 # MIN
@@ -398,7 +412,9 @@ class MonitorGUI:
                 ax_min.set_ylabel('MIN (ADC)')
                 ax_min.grid(True, alpha=0.3)
                 if len(self.monitor.data['min'][mic_num]) > 0:
-                    ax_min.plot(times, list(self.monitor.data['min'][mic_num]),
+                    # Synchroniser les longueurs
+                    data_len = min(len(times), len(self.monitor.data['min'][mic_num]))
+                    ax_min.plot(times[:data_len], list(self.monitor.data['min'][mic_num])[:data_len],
                                'g-', linewidth=1.5)
 
                 self.single_mic_canvas[mic_num].draw()
