@@ -161,12 +161,15 @@ class STM32MicMonitor:
 
 
 class MonitorGUI:
-    def __init__(self, root, monitor):
+    def __init__(self, root, monitor, refresh_rate=500):
         """Interface graphique pour le monitoring"""
         self.root = root
         self.monitor = monitor
         self.root.title("STM32 - Monitoring 6 Microphones")
         self.root.geometry("1400x900")
+
+        # Vitesse de rafraîchissement (en millisecondes)
+        self.refresh_rate = refresh_rate
 
         # Frame pour les informations en haut
         self.info_frame = tk.Frame(root)
@@ -183,6 +186,28 @@ class MonitorGUI:
         self.port_label = tk.Label(self.info_frame, text=f"Port: {monitor.port}",
                                    font=("Arial", 10))
         self.port_label.pack(side=tk.LEFT, padx=20)
+
+        # Contrôle de la vitesse de rafraîchissement
+        refresh_frame = tk.Frame(self.info_frame)
+        refresh_frame.pack(side=tk.RIGHT, padx=20)
+
+        tk.Label(refresh_frame, text="Rafraîchissement:", font=("Arial", 10)).pack(side=tk.LEFT)
+
+        self.refresh_var = tk.IntVar(value=refresh_rate)
+        self.refresh_scale = tk.Scale(
+            refresh_frame,
+            from_=100,
+            to=2000,
+            orient=tk.HORIZONTAL,
+            variable=self.refresh_var,
+            length=150,
+            command=self.on_refresh_change
+        )
+        self.refresh_scale.pack(side=tk.LEFT, padx=5)
+
+        self.refresh_label = tk.Label(refresh_frame, text=f"{refresh_rate}ms",
+                                      font=("Arial", 10))
+        self.refresh_label.pack(side=tk.LEFT)
 
         # Création des onglets
         self.notebook = ttk.Notebook(root)
@@ -420,7 +445,12 @@ class MonitorGUI:
                 self.single_mic_canvas[mic_num].draw()
 
         # Programmer la prochaine mise à jour
-        self.root.after(500, self.update_plots)  # Mise à jour toutes les 500ms
+        self.root.after(self.refresh_rate, self.update_plots)
+
+    def on_refresh_change(self, value):
+        """Callback quand le slider de rafraîchissement change"""
+        self.refresh_rate = int(value)
+        self.refresh_label.config(text=f"{self.refresh_rate}ms")
 
     def update_info(self):
         """Mise à jour des informations d'en-tête"""
@@ -526,6 +556,12 @@ def main():
         default=100,
         help='Nombre de points à afficher (défaut: 100)'
     )
+    parser.add_argument(
+        '--refresh',
+        type=int,
+        default=500,
+        help='Vitesse de rafraîchissement des graphiques en ms (défaut: 500, min: 100, max: 2000)'
+    )
 
     args = parser.parse_args()
 
@@ -563,9 +599,14 @@ def main():
     # Démarrer la lecture
     monitor.start_reading()
 
+    # Valider la vitesse de rafraîchissement
+    refresh_rate = max(100, min(2000, args.refresh))
+    if refresh_rate != args.refresh:
+        print(f"⚠️  Vitesse de rafraîchissement ajustée à {refresh_rate}ms (limites: 100-2000ms)")
+
     # Créer l'interface graphique
     root = tk.Tk()
-    gui = MonitorGUI(root, monitor)
+    gui = MonitorGUI(root, monitor, refresh_rate=refresh_rate)
 
     def on_closing():
         """Nettoyage lors de la fermeture"""
