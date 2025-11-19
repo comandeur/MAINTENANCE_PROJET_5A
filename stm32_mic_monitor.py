@@ -151,6 +151,16 @@ class STM32MicMonitor:
             self.thread.join(timeout=2)
             print("Thread de lecture arrêté")
 
+    def clear_data(self):
+        """Vide toutes les données collectées"""
+        for i in range(self.num_mics):
+            self.data['time'][i].clear()
+            self.data['rms'][i].clear()
+            self.data['min'][i].clear()
+            self.data['max'][i].clear()
+            self.data['amplitude'][i].clear()
+        print("✅ Données réinitialisées")
+
 
 class MonitorGUI:
     def __init__(self, root, monitor, refresh_rate=500):
@@ -200,6 +210,21 @@ class MonitorGUI:
         self.refresh_label = tk.Label(refresh_frame, text=f"{refresh_rate}ms",
                                       font=("Arial", 10))
         self.refresh_label.pack(side=tk.LEFT)
+
+        # Bouton pour réinitialiser les graphes
+        self.clear_button = tk.Button(
+            refresh_frame,
+            text="🗑️ Vider",
+            command=self.clear_all_graphs,
+            font=("Arial", 10),
+            bg="#ff6b6b",
+            fg="white",
+            padx=10,
+            pady=2,
+            relief=tk.RAISED,
+            cursor="hand2"
+        )
+        self.clear_button.pack(side=tk.LEFT, padx=10)
 
         # Création des onglets
         self.notebook = ttk.Notebook(root)
@@ -431,6 +456,18 @@ class MonitorGUI:
         """Callback quand le slider de rafraîchissement change"""
         self.refresh_rate = int(value)
         self.refresh_label.config(text=f"{self.refresh_rate}ms")
+
+    def clear_all_graphs(self):
+        """Vide toutes les données des graphes"""
+        # Demander confirmation
+        from tkinter import messagebox
+        if messagebox.askyesno("Confirmation", "Voulez-vous vraiment vider tous les graphes ?"):
+            # Vider les données du moniteur
+            self.monitor.clear_data()
+
+            # Réinitialiser visuellement tous les graphes
+            # (Les lignes seront automatiquement mises à jour lors du prochain refresh)
+            print("🗑️ Graphes vidés")
 
     def update_info(self):
         """Mise à jour des informations d'en-tête"""
