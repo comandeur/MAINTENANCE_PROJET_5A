@@ -218,6 +218,42 @@ class MonitorGUI:
         for mic_num in range(6):
             self.create_tab_single_mic(mic_num)
 
+        # Initialiser les lignes de graphe (pour optimisation set_data)
+        self.rms_lines = []
+        self.minmax_lines_max = []
+        self.minmax_lines_min = []
+        self.amplitude_lines = []
+        self.single_mic_lines = []
+
+        for i in range(6):
+            # RMS
+            line, = self.rms_axes[i].plot([], [], 'b-', linewidth=1.5)
+            self.rms_lines.append(line)
+
+            # MAX/MIN
+            line_max, = self.minmax_axes[i].plot([], [], 'r-', linewidth=1.5, label='MAX')
+            line_min, = self.minmax_axes[i].plot([], [], 'g-', linewidth=1.5, label='MIN')
+            self.minmax_lines_max.append(line_max)
+            self.minmax_lines_min.append(line_min)
+            self.minmax_axes[i].legend()
+
+            # Amplitude
+            line, = self.amplitude_axes[i].plot([], [], 'purple', linewidth=1.5)
+            self.amplitude_lines.append(line)
+
+            # Vues individuelles (RMS, Amplitude, MAX, MIN)
+            ax_rms, ax_amp, ax_max, ax_min = self.single_mic_axes[i]
+            line_rms, = ax_rms.plot([], [], 'b-', linewidth=1.5)
+            line_amp, = ax_amp.plot([], [], 'purple', linewidth=1.5)
+            line_max, = ax_max.plot([], [], 'r-', linewidth=1.5)
+            line_min, = ax_min.plot([], [], 'g-', linewidth=1.5)
+            self.single_mic_lines.append({
+                'rms': line_rms,
+                'amp': line_amp,
+                'max': line_max,
+                'min': line_min
+            })
+
         # Démarrer les mises à jour
         self.update_plots()
         self.update_info()
@@ -332,91 +368,59 @@ class MonitorGUI:
         self.single_mic_canvas.append(canvas)
 
     def update_plots(self):
-        """Mise à jour périodique des graphes"""
-        # Mise à jour onglet RMS
-        for i, ax in enumerate(self.rms_axes):
-            ax.clear()
-            ax.set_title(f'Microphone A{i} - RMS', fontweight='bold')
-            ax.set_xlabel('Temps (s)')
-            ax.set_ylabel('RMS (mV)')
-            ax.grid(True, alpha=0.3)
-            if len(self.monitor.data['rms'][i]) > 0:
-                times_i = list(self.monitor.data['time'][i])
-                ax.plot(times_i, list(self.monitor.data['rms'][i]),
-                       'b-', linewidth=1.5)
-        self.rms_canvas.draw()
+        """Mise à jour périodique des graphes - optimisée pour ne redessiner que l'onglet visible"""
+        # Déterminer quel onglet est actuellement visible
+        current_tab = self.notebook.index(self.notebook.select())
 
-        # Mise à jour onglet MAX/MIN
-        for i, ax in enumerate(self.minmax_axes):
-            ax.clear()
-            ax.set_title(f'Microphone A{i} - MAX/MIN', fontweight='bold')
-            ax.set_xlabel('Temps (s)')
-            ax.set_ylabel('Valeur ADC')
-            ax.grid(True, alpha=0.3)
-            if len(self.monitor.data['max'][i]) > 0:
-                times_i = list(self.monitor.data['time'][i])
-                ax.plot(times_i, list(self.monitor.data['max'][i]),
-                       'r-', linewidth=1.5, label='MAX')
-                ax.plot(times_i, list(self.monitor.data['min'][i]),
-                       'g-', linewidth=1.5, label='MIN')
-                ax.legend()
-        self.minmax_canvas.draw()
+        # Onglet 0: RMS - Tous les micros
+        if current_tab == 0:
+            for i in range(6):
+                if len(self.monitor.data['rms'][i]) > 0:
+                    times_i = list(self.monitor.data['time'][i])
+                    data_i = list(self.monitor.data['rms'][i])
+                    self.rms_lines[i].set_data(times_i, data_i)
+                    self.rms_axes[i].relim()
+                    self.rms_axes[i].autoscale_view()
+            self.rms_canvas.draw()
 
-        # Mise à jour onglet amplitude
-        for i, ax in enumerate(self.amplitude_axes):
-            ax.clear()
-            ax.set_title(f'Microphone A{i} - Amplitude', fontweight='bold')
-            ax.set_xlabel('Temps (s)')
-            ax.set_ylabel('Amplitude (mV)')
-            ax.grid(True, alpha=0.3)
-            if len(self.monitor.data['amplitude'][i]) > 0:
-                times_i = list(self.monitor.data['time'][i])
-                ax.plot(times_i, list(self.monitor.data['amplitude'][i]),
-                       'purple', linewidth=1.5)
-        self.amplitude_canvas.draw()
+        # Onglet 1: MAX/MIN - Tous les micros
+        elif current_tab == 1:
+            for i in range(6):
+                if len(self.monitor.data['max'][i]) > 0:
+                    times_i = list(self.monitor.data['time'][i])
+                    self.minmax_lines_max[i].set_data(times_i, list(self.monitor.data['max'][i]))
+                    self.minmax_lines_min[i].set_data(times_i, list(self.monitor.data['min'][i]))
+                    self.minmax_axes[i].relim()
+                    self.minmax_axes[i].autoscale_view()
+            self.minmax_canvas.draw()
 
-        # Mise à jour des vues individuelles
-        for mic_num, axes in enumerate(self.single_mic_axes):
-            ax_rms, ax_amp, ax_max, ax_min = axes
+        # Onglet 2: Amplitude - Tous les micros
+        elif current_tab == 2:
+            for i in range(6):
+                if len(self.monitor.data['amplitude'][i]) > 0:
+                    times_i = list(self.monitor.data['time'][i])
+                    self.amplitude_lines[i].set_data(times_i, list(self.monitor.data['amplitude'][i]))
+                    self.amplitude_axes[i].relim()
+                    self.amplitude_axes[i].autoscale_view()
+            self.amplitude_canvas.draw()
 
+        # Onglets 3-8: Vues individuelles des micros
+        elif 3 <= current_tab <= 8:
+            mic_num = current_tab - 3
             if len(self.monitor.data['rms'][mic_num]) > 0:
                 times_mic = list(self.monitor.data['time'][mic_num])
 
-                # RMS
-                ax_rms.clear()
-                ax_rms.set_title(f'A{mic_num} - RMS', fontweight='bold')
-                ax_rms.set_xlabel('Temps (s)')
-                ax_rms.set_ylabel('RMS (mV)')
-                ax_rms.grid(True, alpha=0.3)
-                ax_rms.plot(times_mic, list(self.monitor.data['rms'][mic_num]),
-                           'b-', linewidth=1.5)
+                # Mettre à jour les données des lignes
+                self.single_mic_lines[mic_num]['rms'].set_data(times_mic, list(self.monitor.data['rms'][mic_num]))
+                self.single_mic_lines[mic_num]['amp'].set_data(times_mic, list(self.monitor.data['amplitude'][mic_num]))
+                self.single_mic_lines[mic_num]['max'].set_data(times_mic, list(self.monitor.data['max'][mic_num]))
+                self.single_mic_lines[mic_num]['min'].set_data(times_mic, list(self.monitor.data['min'][mic_num]))
 
-                # Crête-à-crête
-                ax_amp.clear()
-                ax_amp.set_title(f'A{mic_num} - Crête-à-crête', fontweight='bold')
-                ax_amp.set_xlabel('Temps (s)')
-                ax_amp.set_ylabel('Amplitude (mV)')
-                ax_amp.grid(True, alpha=0.3)
-                ax_amp.plot(times_mic, list(self.monitor.data['amplitude'][mic_num]),
-                           'purple', linewidth=1.5)
-
-                # MAX
-                ax_max.clear()
-                ax_max.set_title(f'A{mic_num} - MAX', fontweight='bold')
-                ax_max.set_xlabel('Temps (s)')
-                ax_max.set_ylabel('MAX (ADC)')
-                ax_max.grid(True, alpha=0.3)
-                ax_max.plot(times_mic, list(self.monitor.data['max'][mic_num]),
-                           'r-', linewidth=1.5)
-
-                # MIN
-                ax_min.clear()
-                ax_min.set_title(f'A{mic_num} - MIN', fontweight='bold')
-                ax_min.set_xlabel('Temps (s)')
-                ax_min.set_ylabel('MIN (ADC)')
-                ax_min.grid(True, alpha=0.3)
-                ax_min.plot(times_mic, list(self.monitor.data['min'][mic_num]),
-                           'g-', linewidth=1.5)
+                # Ajuster les axes
+                ax_rms, ax_amp, ax_max, ax_min = self.single_mic_axes[mic_num]
+                for ax in [ax_rms, ax_amp, ax_max, ax_min]:
+                    ax.relim()
+                    ax.autoscale_view()
 
                 self.single_mic_canvas[mic_num].draw()
 
