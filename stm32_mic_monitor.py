@@ -5,6 +5,7 @@ Affiche les données RMS, MIN, MAX et crête-à-crête via UART
 """
 
 import serial
+import serial.tools.list_ports
 import re
 import threading
 import time
@@ -418,6 +419,73 @@ class MonitorGUI:
         self.root.after(100, self.update_info)  # Mise à jour toutes les 100ms
 
 
+def detect_and_select_port():
+    """
+    Détecte automatiquement les ports série disponibles et demande à l'utilisateur
+    de choisir si plusieurs ports sont trouvés.
+
+    Returns:
+        str: Le port sélectionné, ou None si aucun port n'est disponible
+    """
+    print("\n🔍 Recherche des ports série disponibles...\n")
+
+    # Lister tous les ports disponibles
+    ports = list(serial.tools.list_ports.comports())
+
+    if not ports:
+        print("❌ Aucun port série détecté!")
+        print("\n⚠️  Vérifiez que:")
+        print("   - Votre carte STM32 est bien branchée via USB")
+        print("   - Les drivers STM32 sont installés")
+        print("   - Le câble USB fonctionne correctement")
+        return None
+
+    # Si un seul port est trouvé, l'utiliser automatiquement
+    if len(ports) == 1:
+        selected_port = ports[0].device
+        print(f"✅ Port détecté automatiquement: {selected_port}")
+        print(f"   Description: {ports[0].description}")
+        if ports[0].manufacturer:
+            print(f"   Fabricant: {ports[0].manufacturer}")
+        print()
+        return selected_port
+
+    # Si plusieurs ports sont trouvés, demander à l'utilisateur
+    print(f"📡 {len(ports)} ports série détectés:\n")
+    print("-" * 80)
+
+    for i, port in enumerate(ports, 1):
+        print(f"{i}. {port.device}")
+        print(f"   Description: {port.description}")
+        if port.manufacturer:
+            print(f"   Fabricant:   {port.manufacturer}")
+        if port.hwid:
+            print(f"   Hardware ID: {port.hwid}")
+        print("-" * 80)
+
+    # Demander à l'utilisateur de choisir
+    while True:
+        try:
+            choice = input(f"\n👉 Choisissez un port (1-{len(ports)}) ou 'q' pour quitter: ").strip()
+
+            if choice.lower() == 'q':
+                print("❌ Annulé par l'utilisateur")
+                return None
+
+            choice_num = int(choice)
+            if 1 <= choice_num <= len(ports):
+                selected_port = ports[choice_num - 1].device
+                print(f"\n✅ Port sélectionné: {selected_port}\n")
+                return selected_port
+            else:
+                print(f"⚠️  Veuillez entrer un nombre entre 1 et {len(ports)}")
+        except ValueError:
+            print("⚠️  Entrée invalide. Veuillez entrer un nombre ou 'q'")
+        except KeyboardInterrupt:
+            print("\n❌ Annulé par l'utilisateur")
+            return None
+
+
 def main():
     """Point d'entrée principal"""
     import argparse
@@ -427,8 +495,8 @@ def main():
     )
     parser.add_argument(
         '--port',
-        default='/dev/ttyUSB0',
-        help='Port série (ex: /dev/ttyUSB0, COM3)'
+        default=None,
+        help='Port série (ex: /dev/ttyUSB0, COM3). Si non spécifié, détection automatique.'
     )
     parser.add_argument(
         '--baudrate',
@@ -445,9 +513,19 @@ def main():
 
     args = parser.parse_args()
 
+    # Détection automatique du port si non spécifié
+    port_to_use = args.port
+    if port_to_use is None:
+        port_to_use = detect_and_select_port()
+        if port_to_use is None:
+            print("\n❌ Impossible de continuer sans port série.")
+            print("\n💡 Vous pouvez spécifier manuellement un port avec:")
+            print("   python stm32_mic_monitor.py --port COM3")
+            return
+
     # Créer le moniteur
     monitor = STM32MicMonitor(
-        port=args.port,
+        port=port_to_use,
         baudrate=args.baudrate,
         max_points=args.points
     )
@@ -455,22 +533,15 @@ def main():
     # Connexion série
     if not monitor.connect():
         print("❌ Impossible de se connecter au port série!")
-        print(f"   Port demandé: {args.port}")
-        print("\n💡 Solutions:")
-        print("   1. Listez les ports disponibles avec:")
-        print("      python detect_ports.py")
-        print("\n   2. Spécifiez le bon port avec --port")
-        import platform
-        if platform.system() == 'Windows':
-            print("      Exemple Windows: python stm32_mic_monitor.py --port COM3")
-        elif platform.system() == 'Linux':
-            print("      Exemple Linux:   python stm32_mic_monitor.py --port /dev/ttyUSB0")
-        elif platform.system() == 'Darwin':
-            print("      Exemple macOS:   python stm32_mic_monitor.py --port /dev/cu.usbserial-0001")
-        print("\n   3. Vérifiez que:")
-        print("      - La carte STM32 est bien branchée")
-        print("      - Les drivers sont installés")
-        print("      - Aucun autre programme n'utilise le port")
+        print(f"   Port utilisé: {port_to_use}")
+        print("\n⚠️  Vérifiez que:")
+        print("   - La carte STM32 est bien branchée")
+        print("   - Les drivers sont installés")
+        print("   - Aucun autre programme n'utilise le port (Arduino IDE, PuTTY, etc.)")
+        print("   - Le câble USB fonctionne correctement")
+        print("\n💡 Essayez de:")
+        print("   - Débrancher et rebrancher la carte")
+        print("   - Relancer l'application (elle redétectera les ports)")
         return
 
     # Démarrer la lecture
