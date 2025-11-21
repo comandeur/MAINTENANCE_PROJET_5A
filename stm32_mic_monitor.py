@@ -270,6 +270,32 @@ class MonitorGUI:
         self.manual_y_min = 0
         self.manual_y_max = 3300
 
+        # Frame pour contrôle de la base de temps (axe X)
+        time_frame = tk.Frame(self.info_frame)
+        time_frame.pack(side=tk.RIGHT, padx=10)
+
+        tk.Label(time_frame, text="Base temps:", font=("Arial", 9)).pack(side=tk.LEFT, padx=(0, 5))
+
+        self.time_window_var = tk.StringVar(value="30")
+        self.time_window_entry = tk.Entry(time_frame, textvariable=self.time_window_var, width=5, font=("Arial", 9))
+        self.time_window_entry.pack(side=tk.LEFT)
+
+        tk.Label(time_frame, text="s", font=("Arial", 9)).pack(side=tk.LEFT, padx=(2, 5))
+
+        # Checkbox pour afficher tout l'historique
+        self.show_all_time = tk.BooleanVar(value=False)
+        self.show_all_checkbox = tk.Checkbutton(
+            time_frame,
+            text="Tout",
+            variable=self.show_all_time,
+            font=("Arial", 9),
+            command=self.on_time_mode_change
+        )
+        self.show_all_checkbox.pack(side=tk.LEFT)
+
+        # Valeur de fenêtre de temps (en secondes)
+        self.time_window = 30.0
+
         # Création des onglets
         self.notebook = ttk.Notebook(root)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
@@ -436,21 +462,40 @@ class MonitorGUI:
         self.single_mic_axes.append([ax1, ax2, ax3, ax4])
         self.single_mic_canvas.append(canvas)
 
-    def adjust_axis_scale(self, ax):
+    def adjust_axis_scale(self, ax, current_time=None):
         """Ajuste l'échelle d'un axe selon le mode (auto ou manuel)"""
+        # Gestion de l'axe Y
         if self.auto_scale.get():
             ax.relim()
             ax.autoscale_view()
         else:
             ax.set_ylim(self.manual_y_min, self.manual_y_max)
-            # Garder l'autoscale pour l'axe X (temps)
             ax.relim()
             ax.autoscale_view(scaley=False)
+
+        # Gestion de l'axe X (base de temps)
+        if not self.show_all_time.get() and current_time is not None:
+            # Lire la valeur de fenêtre de temps
+            try:
+                self.time_window = float(self.time_window_var.get())
+            except ValueError:
+                self.time_window = 30.0
+
+            # Fenêtre glissante : afficher les dernières X secondes
+            x_min = max(0, current_time - self.time_window)
+            x_max = current_time
+            ax.set_xlim(x_min, x_max)
 
     def update_plots(self):
         """Mise à jour périodique des graphes - optimisée pour ne redessiner que l'onglet visible"""
         # Déterminer quel onglet est actuellement visible
         current_tab = self.notebook.index(self.notebook.select())
+
+        # Trouver le temps le plus récent parmi tous les micros
+        current_time = 0
+        for i in range(6):
+            if len(self.monitor.data['time'][i]) > 0:
+                current_time = max(current_time, self.monitor.data['time'][i][-1])
 
         # Onglet 0: RMS - Tous les micros
         if current_tab == 0:
@@ -459,7 +504,7 @@ class MonitorGUI:
                     times_i = list(self.monitor.data['time'][i])
                     data_i = list(self.monitor.data['rms'][i])
                     self.rms_lines[i].set_data(times_i, data_i)
-                    self.adjust_axis_scale(self.rms_axes[i])
+                    self.adjust_axis_scale(self.rms_axes[i], current_time)
             self.rms_canvas.draw()
 
         # Onglet 1: MAX/MIN - Tous les micros
@@ -469,7 +514,7 @@ class MonitorGUI:
                     times_i = list(self.monitor.data['time'][i])
                     self.minmax_lines_max[i].set_data(times_i, list(self.monitor.data['max'][i]))
                     self.minmax_lines_min[i].set_data(times_i, list(self.monitor.data['min'][i]))
-                    self.adjust_axis_scale(self.minmax_axes[i])
+                    self.adjust_axis_scale(self.minmax_axes[i], current_time)
             self.minmax_canvas.draw()
 
         # Onglet 2: Amplitude - Tous les micros
@@ -478,7 +523,7 @@ class MonitorGUI:
                 if len(self.monitor.data['amplitude'][i]) > 0:
                     times_i = list(self.monitor.data['time'][i])
                     self.amplitude_lines[i].set_data(times_i, list(self.monitor.data['amplitude'][i]))
-                    self.adjust_axis_scale(self.amplitude_axes[i])
+                    self.adjust_axis_scale(self.amplitude_axes[i], current_time)
             self.amplitude_canvas.draw()
 
         # Onglets 3-8: Vues individuelles des micros
@@ -496,7 +541,7 @@ class MonitorGUI:
                 # Ajuster les axes
                 ax_rms, ax_amp, ax_max, ax_min = self.single_mic_axes[mic_num]
                 for ax in [ax_rms, ax_amp, ax_max, ax_min]:
-                    self.adjust_axis_scale(ax)
+                    self.adjust_axis_scale(ax, current_time)
 
                 self.single_mic_canvas[mic_num].draw()
 
@@ -537,6 +582,15 @@ class MonitorGUI:
             print(f"📏 Échelle appliquée: {y_min} - {y_max}")
         except ValueError:
             print("⚠️ Valeurs d'échelle invalides")
+
+    def on_time_mode_change(self):
+        """Callback quand le mode de base de temps change"""
+        if self.show_all_time.get():
+            self.time_window_entry.config(state='disabled')
+            print("⏱️ Base de temps: affichage de tout l'historique")
+        else:
+            self.time_window_entry.config(state='normal')
+            print(f"⏱️ Base de temps: fenêtre glissante de {self.time_window_var.get()}s")
 
     def clear_all_graphs(self):
         """Vide toutes les données des graphes"""
