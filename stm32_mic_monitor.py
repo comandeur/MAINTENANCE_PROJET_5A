@@ -479,7 +479,14 @@ class MonitorGUI:
             ax.relim()
             ax.autoscale_view()
         else:
-            ax.set_ylim(self.manual_y_min, self.manual_y_max)
+            # Lire directement les valeurs des champs (appliquées automatiquement)
+            try:
+                y_min = float(self.y_min_var.get())
+                y_max = float(self.y_max_var.get())
+                if y_min < y_max:
+                    ax.set_ylim(y_min, y_max)
+            except ValueError:
+                pass  # Garder l'échelle actuelle si valeurs invalides
             ax.relim()
             ax.autoscale_view(scaley=False)
 
