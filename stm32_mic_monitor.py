@@ -104,6 +104,7 @@ class STM32MicMonitor:
     def read_serial(self):
         """Thread de lecture des données série"""
         self.running = True
+        self.debug_count = 0
 
         while self.running:
             try:
@@ -111,8 +112,17 @@ class STM32MicMonitor:
                     line = self.serial_conn.readline().decode('utf-8', errors='ignore').strip()
 
                     if line:
+                        # Debug: afficher les premières lignes reçues
+                        if self.debug_count < 10:
+                            print(f"[DEBUG] Reçu: '{line}'")
+                            self.debug_count += 1
+
                         parsed = self.parse_line(line)
                         if parsed:
+                            # Debug: afficher les données parsées
+                            if self.debug_count <= 10:
+                                print(f"[DEBUG] Parsé: mic={parsed['mic']} RMS={parsed['rms']} AMP={parsed['amplitude']}")
+
                             mic_num = parsed['mic']
                             current_time = time.time() - self.start_time
 
