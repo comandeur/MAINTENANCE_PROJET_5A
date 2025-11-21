@@ -226,6 +226,50 @@ class MonitorGUI:
         )
         self.clear_button.pack(side=tk.LEFT, padx=10)
 
+        # Frame pour contrôle de l'échelle
+        scale_frame = tk.Frame(self.info_frame)
+        scale_frame.pack(side=tk.RIGHT, padx=20)
+
+        # Toggle auto/manuel (défaut: manuel)
+        self.auto_scale = tk.BooleanVar(value=False)
+        self.scale_button = tk.Button(
+            scale_frame,
+            text="📏 Manuel",
+            command=self.toggle_scale_mode,
+            font=("Arial", 10),
+            bg="#4a90d9",
+            fg="white",
+            padx=8,
+            pady=2,
+            cursor="hand2"
+        )
+        self.scale_button.pack(side=tk.LEFT, padx=5)
+
+        # Contrôles d'échelle manuelle
+        tk.Label(scale_frame, text="Y min:", font=("Arial", 9)).pack(side=tk.LEFT, padx=(10, 2))
+        self.y_min_var = tk.StringVar(value="0")
+        self.y_min_entry = tk.Entry(scale_frame, textvariable=self.y_min_var, width=6, font=("Arial", 9))
+        self.y_min_entry.pack(side=tk.LEFT)
+
+        tk.Label(scale_frame, text="Y max:", font=("Arial", 9)).pack(side=tk.LEFT, padx=(10, 2))
+        self.y_max_var = tk.StringVar(value="3300")
+        self.y_max_entry = tk.Entry(scale_frame, textvariable=self.y_max_var, width=6, font=("Arial", 9))
+        self.y_max_entry.pack(side=tk.LEFT)
+
+        # Bouton appliquer
+        self.apply_scale_btn = tk.Button(
+            scale_frame,
+            text="Appliquer",
+            command=self.apply_manual_scale,
+            font=("Arial", 9),
+            padx=5
+        )
+        self.apply_scale_btn.pack(side=tk.LEFT, padx=5)
+
+        # Valeurs d'échelle manuelle actuelles
+        self.manual_y_min = 0
+        self.manual_y_max = 3300
+
         # Création des onglets
         self.notebook = ttk.Notebook(root)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
@@ -392,6 +436,17 @@ class MonitorGUI:
         self.single_mic_axes.append([ax1, ax2, ax3, ax4])
         self.single_mic_canvas.append(canvas)
 
+    def adjust_axis_scale(self, ax):
+        """Ajuste l'échelle d'un axe selon le mode (auto ou manuel)"""
+        if self.auto_scale.get():
+            ax.relim()
+            ax.autoscale_view()
+        else:
+            ax.set_ylim(self.manual_y_min, self.manual_y_max)
+            # Garder l'autoscale pour l'axe X (temps)
+            ax.relim()
+            ax.autoscale_view(scaley=False)
+
     def update_plots(self):
         """Mise à jour périodique des graphes - optimisée pour ne redessiner que l'onglet visible"""
         # Déterminer quel onglet est actuellement visible
@@ -404,8 +459,7 @@ class MonitorGUI:
                     times_i = list(self.monitor.data['time'][i])
                     data_i = list(self.monitor.data['rms'][i])
                     self.rms_lines[i].set_data(times_i, data_i)
-                    self.rms_axes[i].relim()
-                    self.rms_axes[i].autoscale_view()
+                    self.adjust_axis_scale(self.rms_axes[i])
             self.rms_canvas.draw()
 
         # Onglet 1: MAX/MIN - Tous les micros
@@ -415,8 +469,7 @@ class MonitorGUI:
                     times_i = list(self.monitor.data['time'][i])
                     self.minmax_lines_max[i].set_data(times_i, list(self.monitor.data['max'][i]))
                     self.minmax_lines_min[i].set_data(times_i, list(self.monitor.data['min'][i]))
-                    self.minmax_axes[i].relim()
-                    self.minmax_axes[i].autoscale_view()
+                    self.adjust_axis_scale(self.minmax_axes[i])
             self.minmax_canvas.draw()
 
         # Onglet 2: Amplitude - Tous les micros
@@ -425,8 +478,7 @@ class MonitorGUI:
                 if len(self.monitor.data['amplitude'][i]) > 0:
                     times_i = list(self.monitor.data['time'][i])
                     self.amplitude_lines[i].set_data(times_i, list(self.monitor.data['amplitude'][i]))
-                    self.amplitude_axes[i].relim()
-                    self.amplitude_axes[i].autoscale_view()
+                    self.adjust_axis_scale(self.amplitude_axes[i])
             self.amplitude_canvas.draw()
 
         # Onglets 3-8: Vues individuelles des micros
@@ -444,8 +496,7 @@ class MonitorGUI:
                 # Ajuster les axes
                 ax_rms, ax_amp, ax_max, ax_min = self.single_mic_axes[mic_num]
                 for ax in [ax_rms, ax_amp, ax_max, ax_min]:
-                    ax.relim()
-                    ax.autoscale_view()
+                    self.adjust_axis_scale(ax)
 
                 self.single_mic_canvas[mic_num].draw()
 
@@ -456,6 +507,36 @@ class MonitorGUI:
         """Callback quand le slider de rafraîchissement change"""
         self.refresh_rate = int(value)
         self.refresh_label.config(text=f"{self.refresh_rate}ms")
+
+    def toggle_scale_mode(self):
+        """Bascule entre échelle auto et manuelle"""
+        self.auto_scale.set(not self.auto_scale.get())
+        if self.auto_scale.get():
+            self.scale_button.config(text="📏 Auto", bg="#28a745")
+            # Désactiver les champs manuels
+            self.y_min_entry.config(state='disabled')
+            self.y_max_entry.config(state='disabled')
+            self.apply_scale_btn.config(state='disabled')
+        else:
+            self.scale_button.config(text="📏 Manuel", bg="#4a90d9")
+            # Activer les champs manuels
+            self.y_min_entry.config(state='normal')
+            self.y_max_entry.config(state='normal')
+            self.apply_scale_btn.config(state='normal')
+
+    def apply_manual_scale(self):
+        """Applique les valeurs d'échelle manuelle"""
+        try:
+            y_min = float(self.y_min_var.get())
+            y_max = float(self.y_max_var.get())
+            if y_min >= y_max:
+                print("⚠️ Y min doit être inférieur à Y max")
+                return
+            self.manual_y_min = y_min
+            self.manual_y_max = y_max
+            print(f"📏 Échelle appliquée: {y_min} - {y_max}")
+        except ValueError:
+            print("⚠️ Valeurs d'échelle invalides")
 
     def clear_all_graphs(self):
         """Vide toutes les données des graphes"""
