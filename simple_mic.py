@@ -59,9 +59,9 @@ for i, ax in enumerate(axes):
     line, = ax.plot([], [], 'b-', linewidth=0.8)
     lines.append(line)
     ax.set_title(f'Canal A{i}')
-    ax.set_ylim(-2048, 2048)
     ax.set_xlim(0, MAX_POINTS)
     ax.grid(True, alpha=0.3)
+    ax.set_autoscaley_on(True)
 
 fig.suptitle('Monitoring 6 canaux - Binaire 1KHz')
 plt.tight_layout()
@@ -90,6 +90,8 @@ def update(frame):
         for i, line in enumerate(lines):
             if len(data_buffers[i]) > 0:
                 line.set_data(range(len(data_buffers[i])), list(data_buffers[i]))
+                axes[i].relim()
+                axes[i].autoscale_view()
 
         # Afficher stats toutes les 100 frames
         if frame % 100 == 0:
@@ -98,7 +100,7 @@ def update(frame):
     return lines
 
 # Animation
-ani = FuncAnimation(fig, update, interval=10, blit=True, cache_frame_data=False)
+ani = FuncAnimation(fig, update, interval=10, blit=False, cache_frame_data=False)
 
 try:
     plt.show()
