@@ -308,7 +308,9 @@ class MonitorGUI:
                 for i in range(6):
                     if len(self.monitor.data['values'][i]) > 0:
                         values = list(self.monitor.data['values'][i])
-                        self.lines_all[i].set_data(times[:len(values)], values)
+                        # Synchroniser les longueurs
+                        n = min(len(times), len(values))
+                        self.lines_all[i].set_data(times[:n], values[:n])
 
                         # Echelle Y
                         if self.auto_scale.get():
@@ -334,7 +336,9 @@ class MonitorGUI:
                 channel = current_tab - 1
                 if len(self.monitor.data['values'][channel]) > 0:
                     values = list(self.monitor.data['values'][channel])
-                    self.single_lines[channel].set_data(times[:len(values)], values)
+                    # Synchroniser les longueurs
+                    n = min(len(times), len(values))
+                    self.single_lines[channel].set_data(times[:n], values[:n])
 
                     # Echelle Y
                     if self.auto_scale.get():
