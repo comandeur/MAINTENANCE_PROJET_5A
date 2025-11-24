@@ -9,7 +9,7 @@ from matplotlib.animation import FuncAnimation
 from collections import deque
 
 # Configuration
-BAUDRATE = 115200
+BAUDRATE = 921600
 MAX_POINTS = 1000
 BYTES_PER_SAMPLE = 12  # 6 × int16_t = 12 bytes
 
