@@ -225,31 +225,69 @@ class MonitorGUI:
         self.time_window_entry.pack(side=tk.LEFT)
         tk.Label(ctrl_frame, text="s", font=("Arial", 9)).pack(side=tk.LEFT, padx=2)
 
-        # Creer la figure avec 6 graphes (2x3)
-        self.fig = Figure(figsize=(12, 7))
-        self.axes = []
-        self.lines = []
+        # Creation des onglets
+        self.notebook = ttk.Notebook(root)
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
+        # Onglet 1: Vue 6 canaux (glissant)
+        self.create_tab_all_channels()
+
+        # Onglets 2-7: Vue individuelle par canal (cumulatif)
+        self.single_axes = []
+        self.single_lines = []
+        self.single_canvas = []
         for i in range(6):
-            ax = self.fig.add_subplot(2, 3, i+1)
-            ax.set_title(f'Canal A{i}', fontweight='bold')
-            ax.set_xlabel('Temps (s)')
-            ax.set_ylabel('Valeur')
-            ax.grid(True, alpha=0.3)
-            self.axes.append(ax)
-
-            line, = ax.plot([], [], 'b-', linewidth=0.8)
-            self.lines.append(line)
-
-        self.fig.tight_layout()
-
-        # Canvas matplotlib dans tkinter
-        self.canvas = FigureCanvasTkAgg(self.fig, root)
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+            self.create_tab_single_channel(i)
 
         # Demarrer les mises a jour
         self.update_plots()
         self.update_info()
+
+    def create_tab_all_channels(self):
+        """Onglet avec les 6 canaux en vue glissante"""
+        tab = ttk.Frame(self.notebook)
+        self.notebook.add(tab, text="6 Canaux (glissant)")
+
+        self.fig_all = Figure(figsize=(12, 7))
+        self.axes_all = []
+        self.lines_all = []
+
+        for i in range(6):
+            ax = self.fig_all.add_subplot(2, 3, i+1)
+            ax.set_title(f'Canal A{i}', fontweight='bold')
+            ax.set_xlabel('Temps (s)')
+            ax.set_ylabel('Valeur')
+            ax.grid(True, alpha=0.3)
+            self.axes_all.append(ax)
+
+            line, = ax.plot([], [], 'b-', linewidth=0.8)
+            self.lines_all.append(line)
+
+        self.fig_all.tight_layout()
+        self.canvas_all = FigureCanvasTkAgg(self.fig_all, tab)
+        self.canvas_all.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+    def create_tab_single_channel(self, channel_num):
+        """Onglet individuel pour un canal (vue cumulative)"""
+        tab = ttk.Frame(self.notebook)
+        self.notebook.add(tab, text=f"A{channel_num}")
+
+        fig = Figure(figsize=(12, 7))
+        ax = fig.add_subplot(1, 1, 1)
+        ax.set_title(f'Canal A{channel_num} - Vue cumulative', fontweight='bold', fontsize=14)
+        ax.set_xlabel('Temps (s)', fontsize=12)
+        ax.set_ylabel('Valeur', fontsize=12)
+        ax.grid(True, alpha=0.3)
+
+        line, = ax.plot([], [], 'b-', linewidth=0.8)
+
+        fig.tight_layout()
+        canvas = FigureCanvasTkAgg(fig, tab)
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+        self.single_axes.append(ax)
+        self.single_lines.append(line)
+        self.single_canvas.append(canvas)
 
     def update_plots(self):
         """Mise a jour periodique des graphes"""
@@ -257,35 +295,63 @@ class MonitorGUI:
             times = list(self.monitor.data['time'])
             current_time = times[-1] if times else 0
 
-            # Lire la fenetre de temps
-            try:
-                time_window = float(self.time_window_var.get())
-            except ValueError:
-                time_window = 1.0
+            # Onglet actif
+            current_tab = self.notebook.index(self.notebook.select())
 
-            for i in range(6):
-                if len(self.monitor.data['values'][i]) > 0:
-                    values = list(self.monitor.data['values'][i])
-                    self.lines[i].set_data(times[:len(values)], values)
+            # Onglet 0: Vue 6 canaux (glissant)
+            if current_tab == 0:
+                try:
+                    time_window = float(self.time_window_var.get())
+                except ValueError:
+                    time_window = 1.0
+
+                for i in range(6):
+                    if len(self.monitor.data['values'][i]) > 0:
+                        values = list(self.monitor.data['values'][i])
+                        self.lines_all[i].set_data(times[:len(values)], values)
+
+                        # Echelle Y
+                        if self.auto_scale.get():
+                            self.axes_all[i].relim()
+                            self.axes_all[i].autoscale_view()
+                        else:
+                            try:
+                                y_min = float(self.y_min_var.get())
+                                y_max = float(self.y_max_var.get())
+                                self.axes_all[i].set_ylim(y_min, y_max)
+                            except ValueError:
+                                pass
+
+                        # Echelle X (fenetre glissante)
+                        x_min = max(0, current_time - time_window)
+                        x_max = max(time_window, current_time)
+                        self.axes_all[i].set_xlim(x_min, x_max)
+
+                self.canvas_all.draw()
+
+            # Onglets 1-6: Vue individuelle (cumulatif)
+            elif 1 <= current_tab <= 6:
+                channel = current_tab - 1
+                if len(self.monitor.data['values'][channel]) > 0:
+                    values = list(self.monitor.data['values'][channel])
+                    self.single_lines[channel].set_data(times[:len(values)], values)
 
                     # Echelle Y
                     if self.auto_scale.get():
-                        self.axes[i].relim()
-                        self.axes[i].autoscale_view()
+                        self.single_axes[channel].relim()
+                        self.single_axes[channel].autoscale_view()
                     else:
                         try:
                             y_min = float(self.y_min_var.get())
                             y_max = float(self.y_max_var.get())
-                            self.axes[i].set_ylim(y_min, y_max)
+                            self.single_axes[channel].set_ylim(y_min, y_max)
                         except ValueError:
                             pass
 
-                    # Echelle X (fenetre glissante)
-                    x_min = max(0, current_time - time_window)
-                    x_max = max(time_window, current_time)
-                    self.axes[i].set_xlim(x_min, x_max)
+                    # Echelle X cumulative (tout l'historique)
+                    self.single_axes[channel].set_xlim(0, max(current_time, 0.1))
 
-            self.canvas.draw()
+                self.single_canvas[channel].draw()
 
         # Programmer la prochaine mise a jour
         self.root.after(self.refresh_rate, self.update_plots)
