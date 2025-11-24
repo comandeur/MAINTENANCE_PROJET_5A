@@ -475,8 +475,8 @@ def main():
     parser.add_argument(
         '--points',
         type=int,
-        default=1000,
-        help='Nombre de points a afficher (defaut: 1000 = 1s a 1KHz)'
+        default=60000,
+        help='Nombre de points a stocker (defaut: 60000 = 60s a 1KHz)'
     )
     parser.add_argument(
         '--refresh',
