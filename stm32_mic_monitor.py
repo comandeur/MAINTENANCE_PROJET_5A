@@ -53,6 +53,9 @@ class STM32MicMonitor:
         self.BYTES_PER_SAMPLE = 12
         self.SAMPLE_PERIOD = 0.001  # 1KHz = 1ms
 
+        # Conversion ADC -> mV (12-bit ADC, 3.3V reference)
+        self.ADC_TO_MV = 3300.0 / 4096.0  # ~0.806 mV par LSB
+
     def connect(self):
         """Établit la connexion série avec la STM32"""
         try:
@@ -100,9 +103,9 @@ class STM32MicMonitor:
                             # Temps cumulatif en secondes
                             self.data['time'].append(self.sample_count * self.SAMPLE_PERIOD)
 
-                            # Stocker les valeurs pour chaque canal
+                            # Stocker les valeurs en mV pour chaque canal
                             for i in range(6):
-                                self.data['values'][i].append(values[i])
+                                self.data['values'][i].append(values[i] * self.ADC_TO_MV)
 
                             self.sample_count += 1
 
@@ -205,15 +208,15 @@ class MonitorGUI:
         )
         self.scale_button.pack(side=tk.LEFT, padx=5)
 
-        # Controles echelle manuelle
-        tk.Label(ctrl_frame, text="Y:", font=("Arial", 9)).pack(side=tk.LEFT, padx=(10, 2))
-        self.y_min_var = tk.StringVar(value="-2048")
+        # Controles echelle manuelle (en mV)
+        tk.Label(ctrl_frame, text="Y(mV):", font=("Arial", 9)).pack(side=tk.LEFT, padx=(10, 2))
+        self.y_min_var = tk.StringVar(value="-1650")
         self.y_min_entry = tk.Entry(ctrl_frame, textvariable=self.y_min_var, width=6, font=("Arial", 9))
         self.y_min_entry.pack(side=tk.LEFT)
         self.y_min_entry.config(state='disabled')
 
         tk.Label(ctrl_frame, text="a", font=("Arial", 9)).pack(side=tk.LEFT, padx=2)
-        self.y_max_var = tk.StringVar(value="2048")
+        self.y_max_var = tk.StringVar(value="1650")
         self.y_max_entry = tk.Entry(ctrl_frame, textvariable=self.y_max_var, width=6, font=("Arial", 9))
         self.y_max_entry.pack(side=tk.LEFT)
         self.y_max_entry.config(state='disabled')
@@ -256,7 +259,7 @@ class MonitorGUI:
             ax = self.fig_all.add_subplot(2, 3, i+1)
             ax.set_title(f'Canal A{i}', fontweight='bold')
             ax.set_xlabel('Temps (s)')
-            ax.set_ylabel('Valeur')
+            ax.set_ylabel('Amplitude (mV)')
             ax.grid(True, alpha=0.3)
             self.axes_all.append(ax)
 
@@ -276,7 +279,7 @@ class MonitorGUI:
         ax = fig.add_subplot(1, 1, 1)
         ax.set_title(f'Canal A{channel_num} - Vue cumulative', fontweight='bold', fontsize=14)
         ax.set_xlabel('Temps (s)', fontsize=12)
-        ax.set_ylabel('Valeur', fontsize=12)
+        ax.set_ylabel('Amplitude (mV)', fontsize=12)
         ax.grid(True, alpha=0.3)
 
         line, = ax.plot([], [], 'b-', linewidth=0.8)
