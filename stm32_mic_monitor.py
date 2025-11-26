@@ -45,9 +45,11 @@ class STM32MicMonitor:
         self.running = False
         self.thread = None
         self.sample_count = 0
-        self.last_freq_time = time.time()
+        self.start_time = time.perf_counter()  # Plus précis que time.time()
+        self.last_freq_time = time.perf_counter()
         self.last_freq_count = 0
         self.sampling_freq = 0.0
+        self.avg_sampling_freq = 0.0  # Fréquence moyenne depuis le début
 
         # Format binaire: 12 bytes = 6 × int16_t
         self.BYTES_PER_SAMPLE = 12
@@ -110,13 +112,20 @@ class STM32MicMonitor:
                             self.sample_count += 1
 
                         # Calcul de la fréquence d'échantillonnage
-                        now = time.time()
+                        now = time.perf_counter()
+
+                        # Fréquence instantanée (fenêtre glissante de 1s)
                         elapsed = now - self.last_freq_time
                         if elapsed >= 1.0:
                             samples_since = self.sample_count - self.last_freq_count
                             self.sampling_freq = samples_since / elapsed
                             self.last_freq_count = self.sample_count
                             self.last_freq_time = now
+
+                        # Fréquence moyenne depuis le début (plus stable)
+                        total_elapsed = now - self.start_time
+                        if total_elapsed > 0:
+                            self.avg_sampling_freq = self.sample_count / total_elapsed
 
                 time.sleep(0.001)
 
@@ -145,6 +154,10 @@ class STM32MicMonitor:
             self.data['values'][i].clear()
         self.sample_count = 0
         self.last_freq_count = 0
+        self.start_time = time.perf_counter()
+        self.last_freq_time = time.perf_counter()
+        self.sampling_freq = 0.0
+        self.avg_sampling_freq = 0.0
         print("Donnees reinitialisees")
 
 
@@ -167,7 +180,7 @@ class MonitorGUI:
                                    font=("Arial", 12, "bold"))
         self.time_label.pack(side=tk.LEFT, padx=20)
 
-        self.freq_label = tk.Label(self.info_frame, text="Freq: 0 Hz",
+        self.freq_label = tk.Label(self.info_frame, text="Freq: 0 Hz (moy: 0 Hz)",
                                    font=("Arial", 12, "bold"))
         self.freq_label.pack(side=tk.LEFT, padx=20)
 
@@ -384,7 +397,12 @@ class MonitorGUI:
         """Mise a jour des informations d'en-tete"""
         current_time = datetime.now().strftime("%H:%M:%S")
         self.time_label.config(text=f"Heure: {current_time}")
-        self.freq_label.config(text=f"Freq: {self.monitor.sampling_freq:.0f} Hz")
+
+        # Afficher fréquence instantanée et moyenne
+        freq_inst = self.monitor.sampling_freq
+        freq_avg = self.monitor.avg_sampling_freq
+        self.freq_label.config(text=f"Freq: {freq_inst:.1f} Hz (moy: {freq_avg:.2f} Hz)")
+
         self.samples_label.config(text=f"Samples: {self.monitor.sample_count}")
 
         self.root.after(200, self.update_info)
