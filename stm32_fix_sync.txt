@@ -1,0 +1,13 @@
+// Dans main.c, section USER CODE BEGIN 2:
+
+/* Calibration de l'ADC */
+HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED);
+
+// IMPORTANT: Démarrer le timer AVANT le DMA
+HAL_TIM_Base_Start(&htim2);
+
+// Attendre un peu pour que le timer soit stable
+HAL_Delay(10);
+
+// PUIS démarrer le DMA
+HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buffer, 6);

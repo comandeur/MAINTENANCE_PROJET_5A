@@ -83,6 +83,12 @@ class STM32MicMonitor:
         self.running = True
         self.debug_count = 0
 
+        # Vider le buffer série au démarrage (ignorer données corrompues)
+        if self.serial_conn:
+            time.sleep(0.1)  # Attendre accumulation
+            self.serial_conn.reset_input_buffer()
+            print("[INFO] Buffer série vidé au démarrage")
+
         while self.running:
             try:
                 if self.serial_conn:
