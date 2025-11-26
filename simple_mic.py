@@ -11,7 +11,8 @@ from collections import deque
 # Configuration
 BAUDRATE = 921600
 MAX_POINTS = 1000
-BYTES_PER_SAMPLE = 12  # 6 × int16_t = 12 bytes
+BYTES_PER_SAMPLE = 18  # 6 × (uint8_t id + int16_t value) = 18 bytes
+BYTES_PER_CHANNEL = 3  # 1 byte ID + 2 bytes value
 
 def find_serial_port():
     """Détection automatique du port série"""
@@ -44,7 +45,7 @@ if not port:
 # Ouvrir le port série
 print(f"Connexion à {port} @ {BAUDRATE} bauds...")
 ser = serial.Serial(port, BAUDRATE, timeout=0.1)
-print("Connecté! En attente des données binaires (6 × int16_t = 12 bytes)...")
+print("Connecté! En attente des données binaires (6 × [ID + value] = 18 bytes)...")
 
 # Buffers pour visualisation
 data_buffers = [deque(maxlen=MAX_POINTS) for _ in range(6)]
@@ -80,15 +81,28 @@ def update(frame):
         # Décoder chaque échantillon
         for s in range(samples_to_read):
             offset = s * BYTES_PER_SAMPLE
-            values = struct.unpack('<6h', raw[offset:offset + BYTES_PER_SAMPLE])
 
-            # Temps cumulatif en secondes
-            time_buffer.append(sample_count * SAMPLE_PERIOD)
+            # Créer tableau temporaire pour ce sample
+            sample_values = [None] * 6
 
-            for i in range(6):
-                data_buffers[i].append(values[i])
+            # Décoder les 6 canaux (ID + valeur)
+            for ch in range(6):
+                ch_offset = offset + (ch * BYTES_PER_CHANNEL)
+                channel_id, value = struct.unpack('<Bh', raw[ch_offset:ch_offset + BYTES_PER_CHANNEL])
 
-            sample_count += 1
+                # Placer la valeur au bon index
+                if 0 <= channel_id < 6:
+                    sample_values[channel_id] = value
+
+            # Vérifier qu'on a tous les canaux
+            if None not in sample_values:
+                # Temps cumulatif en secondes
+                time_buffer.append(sample_count * SAMPLE_PERIOD)
+
+                for i in range(6):
+                    data_buffers[i].append(sample_values[i])
+
+                sample_count += 1
 
         # Mettre à jour les graphiques
         times = list(time_buffer)

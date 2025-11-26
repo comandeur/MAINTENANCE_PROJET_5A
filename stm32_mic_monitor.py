@@ -51,8 +51,9 @@ class STM32MicMonitor:
         self.sampling_freq = 0.0
         self.avg_sampling_freq = 0.0  # Fréquence moyenne depuis le début
 
-        # Format binaire: 12 bytes = 6 × int16_t
-        self.BYTES_PER_SAMPLE = 12
+        # Format binaire: 18 bytes = 6 × (uint8_t id + int16_t value)
+        self.BYTES_PER_SAMPLE = 18  # 6 × 3 bytes
+        self.BYTES_PER_CHANNEL = 3  # 1 byte ID + 2 bytes value
         self.SAMPLE_PERIOD = 0.001  # 1KHz = 1ms
 
         # Conversion ADC -> mV (12-bit ADC, 3.3V reference)
@@ -101,21 +102,39 @@ class STM32MicMonitor:
                         # Décoder chaque échantillon
                         for s in range(samples_to_read):
                             offset = s * self.BYTES_PER_SAMPLE
-                            values = struct.unpack('<6h', raw[offset:offset + self.BYTES_PER_SAMPLE])
+
+                            # Créer un tableau temporaire pour ce sample
+                            sample_values = [None] * 6
+
+                            # Décoder les 6 canaux (ID + valeur)
+                            for ch in range(6):
+                                ch_offset = offset + (ch * self.BYTES_PER_CHANNEL)
+                                channel_id, value = struct.unpack('<Bh', raw[ch_offset:ch_offset + self.BYTES_PER_CHANNEL])
+
+                                # Vérifier que l'ID est valide
+                                if 0 <= channel_id < 6:
+                                    sample_values[channel_id] = value
+                                elif self.debug_count < 10:
+                                    print(f"[WARNING] Invalid channel_id={channel_id} at sample {self.sample_count}")
 
                             # Debug: afficher les premiers échantillons
                             if self.debug_count < 5:
-                                print(f"[DEBUG] Sample {self.sample_count}: {values}")
+                                print(f"[DEBUG] Sample {self.sample_count}: {sample_values}")
                                 self.debug_count += 1
 
-                            # Temps cumulatif en secondes
-                            self.data['time'].append(self.sample_count * self.SAMPLE_PERIOD)
+                            # Vérifier qu'on a reçu tous les canaux
+                            if None not in sample_values:
+                                # Temps cumulatif en secondes
+                                self.data['time'].append(self.sample_count * self.SAMPLE_PERIOD)
 
-                            # Stocker les valeurs en mV pour chaque canal
-                            for i in range(6):
-                                self.data['values'][i].append(values[i] * self.ADC_TO_MV)
+                                # Stocker les valeurs en mV pour chaque canal
+                                for i in range(6):
+                                    self.data['values'][i].append(sample_values[i] * self.ADC_TO_MV)
 
-                            self.sample_count += 1
+                                self.sample_count += 1
+                            elif self.debug_count < 10:
+                                print(f"[WARNING] Incomplete sample at {self.sample_count}, missing channels")
+                                self.debug_count += 1
 
                         # Calcul de la fréquence d'échantillonnage
                         now = time.perf_counter()
