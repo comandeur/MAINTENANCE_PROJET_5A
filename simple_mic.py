@@ -11,8 +11,8 @@ from collections import deque
 # Configuration
 BAUDRATE = 921600
 MAX_POINTS = 1000
-BYTES_PER_SAMPLE = 18  # 6 × (uint8_t id + int16_t value) = 18 bytes
-BYTES_PER_CHANNEL = 3  # 1 byte ID + 2 bytes value
+BYTES_PER_SAMPLE = 13  # 1 header + 6 × int16_t = 13 bytes
+HEADER_BYTE = 0xAA
 
 def find_serial_port():
     """Détection automatique du port série"""
@@ -45,7 +45,7 @@ if not port:
 # Ouvrir le port série
 print(f"Connexion à {port} @ {BAUDRATE} bauds...")
 ser = serial.Serial(port, BAUDRATE, timeout=0.1)
-print("Connecté! En attente des données binaires (6 × [ID + value] = 18 bytes)...")
+print("Connecté! En attente des données binaires (header 0xAA + 6 × int16_t = 13 bytes)...")
 
 # Buffers pour visualisation
 data_buffers = [deque(maxlen=MAX_POINTS) for _ in range(6)]
@@ -82,27 +82,21 @@ def update(frame):
         for s in range(samples_to_read):
             offset = s * BYTES_PER_SAMPLE
 
-            # Créer tableau temporaire pour ce sample
-            sample_values = [None] * 6
+            # Vérifier le header
+            header = raw[offset]
+            if header != HEADER_BYTE:
+                continue  # Ignorer ce paquet
 
-            # Décoder les 6 canaux (ID + valeur)
-            for ch in range(6):
-                ch_offset = offset + (ch * BYTES_PER_CHANNEL)
-                channel_id, value = struct.unpack('<Bh', raw[ch_offset:ch_offset + BYTES_PER_CHANNEL])
+            # Décoder les 6 valeurs int16_t
+            values = struct.unpack('<6h', raw[offset+1:offset+13])
 
-                # Placer la valeur au bon index
-                if 0 <= channel_id < 6:
-                    sample_values[channel_id] = value
+            # Temps cumulatif en secondes
+            time_buffer.append(sample_count * SAMPLE_PERIOD)
 
-            # Vérifier qu'on a tous les canaux
-            if None not in sample_values:
-                # Temps cumulatif en secondes
-                time_buffer.append(sample_count * SAMPLE_PERIOD)
+            for i in range(6):
+                data_buffers[i].append(values[i])
 
-                for i in range(6):
-                    data_buffers[i].append(sample_values[i])
-
-                sample_count += 1
+            sample_count += 1
 
         # Mettre à jour les graphiques
         times = list(time_buffer)
