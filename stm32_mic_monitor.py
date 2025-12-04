@@ -513,8 +513,8 @@ def main():
     parser.add_argument(
         '--points',
         type=int,
-        default=600000,
-        help='Nombre de points a stocker (defaut: 600000 = 10min a 1KHz)'
+        default=3600000,
+        help='Nombre de points a stocker (defaut: 3600000 = 1h a 1KHz)'
     )
     parser.add_argument(
         '--refresh',
