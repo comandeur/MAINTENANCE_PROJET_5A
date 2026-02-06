@@ -51,7 +51,9 @@ print("Connecté! En attente des données binaires (header 0xAA + 6 × int16_t =
 data_buffers = [deque(maxlen=MAX_POINTS) for _ in range(6)]
 time_buffer = deque(maxlen=MAX_POINTS)  # Temps en secondes
 sample_count = 0
+skipped_bytes = 0
 SAMPLE_PERIOD = 0.001  # 1KHz = 1ms par échantillon
+recv_buffer = bytearray()  # Buffer de réception pour synchronisation
 
 # Créer la figure
 fig, axes = plt.subplots(2, 3, figsize=(12, 6))
@@ -69,35 +71,40 @@ fig.suptitle('Monitoring 6 canaux - Binaire 1KHz')
 plt.tight_layout()
 
 def update(frame):
-    global sample_count
+    global sample_count, recv_buffer, skipped_bytes
 
-    # Lire tous les échantillons disponibles
+    # Lire tous les octets disponibles dans le buffer
     bytes_available = ser.in_waiting
-    samples_to_read = bytes_available // BYTES_PER_SAMPLE
+    if bytes_available > 0:
+        recv_buffer.extend(ser.read(bytes_available))
 
-    if samples_to_read > 0:
-        raw = ser.read(samples_to_read * BYTES_PER_SAMPLE)
+    # Scanner le buffer pour trouver des paquets valides (header 0xAA)
+    decoded = False
+    while len(recv_buffer) >= BYTES_PER_SAMPLE:
+        # Chercher le header 0xAA
+        if recv_buffer[0] != HEADER_BYTE:
+            # Octet parasite : on le jette et on avance
+            skipped_bytes += 1
+            recv_buffer.pop(0)
+            continue
 
-        # Décoder chaque échantillon
-        for s in range(samples_to_read):
-            offset = s * BYTES_PER_SAMPLE
+        # Header trouvé, extraire le paquet de 13 bytes
+        packet = recv_buffer[:BYTES_PER_SAMPLE]
+        recv_buffer = recv_buffer[BYTES_PER_SAMPLE:]
 
-            # Vérifier le header
-            header = raw[offset]
-            if header != HEADER_BYTE:
-                continue  # Ignorer ce paquet
+        # Décoder les 6 valeurs int16_t
+        values = struct.unpack('<6h', packet[1:13])
 
-            # Décoder les 6 valeurs int16_t
-            values = struct.unpack('<6h', raw[offset+1:offset+13])
+        # Temps cumulatif en secondes
+        time_buffer.append(sample_count * SAMPLE_PERIOD)
 
-            # Temps cumulatif en secondes
-            time_buffer.append(sample_count * SAMPLE_PERIOD)
+        for i in range(6):
+            data_buffers[i].append(values[i])
 
-            for i in range(6):
-                data_buffers[i].append(values[i])
+        sample_count += 1
+        decoded = True
 
-            sample_count += 1
-
+    if decoded:
         # Mettre à jour les graphiques
         times = list(time_buffer)
         for i, line in enumerate(lines):
@@ -108,7 +115,7 @@ def update(frame):
 
         # Afficher stats toutes les 100 frames
         if frame % 100 == 0:
-            fig.suptitle(f'Monitoring 6 canaux - {sample_count} samples reçus')
+            fig.suptitle(f'Monitoring 6 canaux - {sample_count} samples ({skipped_bytes} octets ignorés)')
 
     return lines
 

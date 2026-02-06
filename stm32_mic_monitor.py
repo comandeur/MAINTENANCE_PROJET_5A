@@ -80,9 +80,14 @@ class STM32MicMonitor:
             print("Connexion série fermée")
 
     def read_serial(self):
-        """Thread de lecture des données série (format binaire)"""
+        """Thread de lecture des données série (format binaire)
+        Scanne octet par octet pour trouver le header 0xAA,
+        ce qui permet d'ignorer les messages parasites sur l'UART.
+        """
         self.running = True
         self.debug_count = 0
+        self.skipped_bytes = 0
+        recv_buffer = bytearray()
 
         # Vider le buffer série au démarrage (ignorer données corrompues)
         if self.serial_conn:
@@ -94,55 +99,58 @@ class STM32MicMonitor:
             try:
                 if self.serial_conn:
                     bytes_available = self.serial_conn.in_waiting
-                    samples_to_read = bytes_available // self.BYTES_PER_SAMPLE
+                    if bytes_available > 0:
+                        recv_buffer.extend(self.serial_conn.read(bytes_available))
 
-                    if samples_to_read > 0:
-                        raw = self.serial_conn.read(samples_to_read * self.BYTES_PER_SAMPLE)
+                    # Scanner le buffer pour trouver des paquets valides
+                    while len(recv_buffer) >= self.BYTES_PER_SAMPLE:
+                        # Chercher le header 0xAA
+                        if recv_buffer[0] != self.HEADER_BYTE:
+                            # Octet parasite : on le jette et on avance
+                            self.skipped_bytes += 1
+                            if self.skipped_bytes <= 20:
+                                print(f"[SKIP] Octet ignoré: 0x{recv_buffer[0]:02X}")
+                            elif self.skipped_bytes == 21:
+                                print("[SKIP] (messages suivants masqués)")
+                            recv_buffer.pop(0)
+                            continue
 
-                        # Décoder chaque échantillon
-                        for s in range(samples_to_read):
-                            offset = s * self.BYTES_PER_SAMPLE
+                        # Header trouvé, extraire le paquet de 13 bytes
+                        packet = recv_buffer[:self.BYTES_PER_SAMPLE]
+                        recv_buffer = recv_buffer[self.BYTES_PER_SAMPLE:]
 
-                            # Vérifier le header
-                            header = raw[offset]
-                            if header != self.HEADER_BYTE:
-                                if self.debug_count < 10:
-                                    print(f"[WARNING] Invalid header: 0x{header:02X} (expected 0x{self.HEADER_BYTE:02X})")
-                                    self.debug_count += 1
-                                continue
+                        # Décoder les 6 valeurs int16_t
+                        values = struct.unpack('<6h', packet[1:13])
 
-                            # Décoder les 6 valeurs int16_t
-                            values = struct.unpack('<6h', raw[offset+1:offset+13])
+                        # Debug: afficher les premiers échantillons
+                        if self.debug_count < 5:
+                            print(f"[DEBUG] Sample {self.sample_count}: {values}")
+                            self.debug_count += 1
 
-                            # Debug: afficher les premiers échantillons
-                            if self.debug_count < 5:
-                                print(f"[DEBUG] Sample {self.sample_count}: {values}")
-                                self.debug_count += 1
+                        # Temps cumulatif en secondes
+                        self.data['time'].append(self.sample_count * self.SAMPLE_PERIOD)
 
-                            # Temps cumulatif en secondes
-                            self.data['time'].append(self.sample_count * self.SAMPLE_PERIOD)
+                        # Stocker les valeurs en mV pour chaque canal
+                        for i in range(6):
+                            self.data['values'][i].append(values[i] * self.ADC_TO_MV)
 
-                            # Stocker les valeurs en mV pour chaque canal
-                            for i in range(6):
-                                self.data['values'][i].append(values[i] * self.ADC_TO_MV)
+                        self.sample_count += 1
 
-                            self.sample_count += 1
+                    # Calcul de la fréquence d'échantillonnage
+                    now = time.perf_counter()
 
-                        # Calcul de la fréquence d'échantillonnage
-                        now = time.perf_counter()
+                    # Fréquence instantanée (fenêtre glissante de 1s)
+                    elapsed = now - self.last_freq_time
+                    if elapsed >= 1.0:
+                        samples_since = self.sample_count - self.last_freq_count
+                        self.sampling_freq = samples_since / elapsed
+                        self.last_freq_count = self.sample_count
+                        self.last_freq_time = now
 
-                        # Fréquence instantanée (fenêtre glissante de 1s)
-                        elapsed = now - self.last_freq_time
-                        if elapsed >= 1.0:
-                            samples_since = self.sample_count - self.last_freq_count
-                            self.sampling_freq = samples_since / elapsed
-                            self.last_freq_count = self.sample_count
-                            self.last_freq_time = now
-
-                        # Fréquence moyenne depuis le début (plus stable)
-                        total_elapsed = now - self.start_time
-                        if total_elapsed > 0:
-                            self.avg_sampling_freq = self.sample_count / total_elapsed
+                    # Fréquence moyenne depuis le début (plus stable)
+                    total_elapsed = now - self.start_time
+                    if total_elapsed > 0:
+                        self.avg_sampling_freq = self.sample_count / total_elapsed
 
                 time.sleep(0.001)
 
