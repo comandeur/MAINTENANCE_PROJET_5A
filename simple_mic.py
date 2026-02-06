@@ -78,17 +78,20 @@ def update(frame):
     if bytes_available > 0:
         recv_buffer.extend(ser.read(bytes_available))
 
-    # Scanner le buffer pour trouver des paquets valides (header 0xAA)
+    # Scanner le buffer octet par octet
     decoded = False
-    while len(recv_buffer) >= BYTES_PER_SAMPLE:
-        # Chercher le header 0xAA
+    while len(recv_buffer) > 0:
         if recv_buffer[0] != HEADER_BYTE:
-            # Octet parasite : on le jette et on avance
+            # Octet parasite : on le jette
             skipped_bytes += 1
             recv_buffer.pop(0)
             continue
 
-        # Header trouvé, extraire le paquet de 13 bytes
+        # Header 0xAA trouvé - assez de bytes pour un paquet complet ?
+        if len(recv_buffer) < BYTES_PER_SAMPLE:
+            break  # Attendre plus de données
+
+        # Extraire le paquet de 13 bytes
         packet = recv_buffer[:BYTES_PER_SAMPLE]
         recv_buffer = recv_buffer[BYTES_PER_SAMPLE:]
 

@@ -103,9 +103,8 @@ class STM32MicMonitor:
                     if bytes_available > 0:
                         recv_buffer.extend(self.serial_conn.read(bytes_available))
 
-                    # Scanner le buffer pour trouver des paquets valides
-                    while len(recv_buffer) >= self.BYTES_PER_SAMPLE:
-                        # Chercher le header 0xAA
+                    # Scanner le buffer octet par octet
+                    while len(recv_buffer) > 0:
                         if recv_buffer[0] != self.HEADER_BYTE:
                             # Octet non-protocole : accumuler pour affichage texte
                             byte = recv_buffer.pop(0)
@@ -123,6 +122,10 @@ class STM32MicMonitor:
                                 uart_text_buffer.append(byte)
                             continue
 
+                        # Header 0xAA trouvé - assez de bytes pour un paquet complet ?
+                        if len(recv_buffer) < self.BYTES_PER_SAMPLE:
+                            break  # Attendre plus de données
+
                         # Vider le buffer texte avant de traiter un paquet valide
                         if uart_text_buffer:
                             try:
@@ -133,7 +136,7 @@ class STM32MicMonitor:
                                 print(f"[UART] {msg}")
                             uart_text_buffer.clear()
 
-                        # Header trouvé, extraire le paquet de 13 bytes
+                        # Extraire le paquet de 13 bytes
                         packet = recv_buffer[:self.BYTES_PER_SAMPLE]
                         recv_buffer = recv_buffer[self.BYTES_PER_SAMPLE:]
 
