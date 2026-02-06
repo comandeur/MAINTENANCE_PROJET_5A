@@ -88,6 +88,7 @@ class STM32MicMonitor:
         self.debug_count = 0
         self.skipped_bytes = 0
         recv_buffer = bytearray()
+        uart_text_buffer = bytearray()  # Accumule les octets non-protocole pour affichage texte
 
         # Vider le buffer série au démarrage (ignorer données corrompues)
         if self.serial_conn:
@@ -106,14 +107,31 @@ class STM32MicMonitor:
                     while len(recv_buffer) >= self.BYTES_PER_SAMPLE:
                         # Chercher le header 0xAA
                         if recv_buffer[0] != self.HEADER_BYTE:
-                            # Octet parasite : on le jette et on avance
+                            # Octet non-protocole : accumuler pour affichage texte
+                            byte = recv_buffer.pop(0)
                             self.skipped_bytes += 1
-                            if self.skipped_bytes <= 20:
-                                print(f"[SKIP] Octet ignoré: 0x{recv_buffer[0]:02X}")
-                            elif self.skipped_bytes == 21:
-                                print("[SKIP] (messages suivants masqués)")
-                            recv_buffer.pop(0)
+                            if byte == 0x0A or byte == 0x0D:  # \n ou \r
+                                if uart_text_buffer:
+                                    try:
+                                        msg = uart_text_buffer.decode('ascii', errors='replace').strip()
+                                    except Exception:
+                                        msg = uart_text_buffer.hex(' ')
+                                    if msg:
+                                        print(f"[UART] {msg}")
+                                    uart_text_buffer.clear()
+                            else:
+                                uart_text_buffer.append(byte)
                             continue
+
+                        # Vider le buffer texte avant de traiter un paquet valide
+                        if uart_text_buffer:
+                            try:
+                                msg = uart_text_buffer.decode('ascii', errors='replace').strip()
+                            except Exception:
+                                msg = uart_text_buffer.hex(' ')
+                            if msg:
+                                print(f"[UART] {msg}")
+                            uart_text_buffer.clear()
 
                         # Header trouvé, extraire le paquet de 13 bytes
                         packet = recv_buffer[:self.BYTES_PER_SAMPLE]
