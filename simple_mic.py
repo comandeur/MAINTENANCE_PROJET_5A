@@ -52,6 +52,7 @@ data_buffers = [deque(maxlen=MAX_POINTS) for _ in range(6)]
 time_buffer = deque(maxlen=MAX_POINTS)  # Temps en secondes
 sample_count = 0
 skipped_bytes = 0
+aligned = False  # True quand l'alignement sur les paquets est confirmé
 SAMPLE_PERIOD = 0.001  # 1KHz = 1ms par échantillon
 recv_buffer = bytearray()  # Buffer de réception pour synchronisation
 
@@ -71,7 +72,7 @@ fig.suptitle('Monitoring 6 canaux - Binaire 1KHz')
 plt.tight_layout()
 
 def update(frame):
-    global sample_count, recv_buffer, skipped_bytes
+    global sample_count, recv_buffer, skipped_bytes, aligned
 
     # Lire tous les octets disponibles dans le buffer
     bytes_available = ser.in_waiting
@@ -83,6 +84,7 @@ def update(frame):
     while len(recv_buffer) > 0:
         if recv_buffer[0] != HEADER_BYTE:
             # Octet parasite : on le jette
+            aligned = False
             skipped_bytes += 1
             recv_buffer.pop(0)
             continue
@@ -90,6 +92,17 @@ def update(frame):
         # Header 0xAA trouvé - assez de bytes pour un paquet complet ?
         if len(recv_buffer) < BYTES_PER_SAMPLE:
             break  # Attendre plus de données
+
+        # Si pas encore aligné, valider avec double-header
+        if not aligned:
+            if len(recv_buffer) < BYTES_PER_SAMPLE + 1:
+                break  # Attendre le byte suivant pour valider
+            if recv_buffer[BYTES_PER_SAMPLE] != HEADER_BYTE:
+                # Faux 0xAA dans les données - on le saute
+                recv_buffer.pop(0)
+                skipped_bytes += 1
+                continue
+            aligned = True
 
         # Extraire le paquet de 13 bytes
         packet = recv_buffer[:BYTES_PER_SAMPLE]

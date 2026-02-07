@@ -82,13 +82,15 @@ class STM32MicMonitor:
     def read_serial(self):
         """Thread de lecture des données série (format binaire)
         Scanne octet par octet pour trouver le header 0xAA,
-        ce qui permet d'ignorer les messages parasites sur l'UART.
+        valide l'alignement avec un double-header check pour éviter
+        les faux positifs (0xAA dans les données).
         """
         self.running = True
         self.debug_count = 0
         self.skipped_bytes = 0
         recv_buffer = bytearray()
         uart_text_buffer = bytearray()  # Accumule les octets non-protocole pour affichage texte
+        aligned = False  # True quand l'alignement sur les paquets est confirmé
 
         # Vider le buffer série au démarrage (ignorer données corrompues)
         if self.serial_conn:
@@ -107,6 +109,7 @@ class STM32MicMonitor:
                     while len(recv_buffer) > 0:
                         if recv_buffer[0] != self.HEADER_BYTE:
                             # Octet non-protocole : accumuler pour affichage texte
+                            aligned = False
                             byte = recv_buffer.pop(0)
                             self.skipped_bytes += 1
                             if byte == 0x0A or byte == 0x0D:  # \n ou \r
@@ -125,6 +128,17 @@ class STM32MicMonitor:
                         # Header 0xAA trouvé - assez de bytes pour un paquet complet ?
                         if len(recv_buffer) < self.BYTES_PER_SAMPLE:
                             break  # Attendre plus de données
+
+                        # Si pas encore aligné, valider avec double-header
+                        if not aligned:
+                            if len(recv_buffer) < self.BYTES_PER_SAMPLE + 1:
+                                break  # Attendre le byte suivant pour valider
+                            if recv_buffer[self.BYTES_PER_SAMPLE] != self.HEADER_BYTE:
+                                # Faux 0xAA dans les données - on le saute
+                                recv_buffer.pop(0)
+                                self.skipped_bytes += 1
+                                continue
+                            aligned = True
 
                         # Vider le buffer texte avant de traiter un paquet valide
                         if uart_text_buffer:
