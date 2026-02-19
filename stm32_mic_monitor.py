@@ -609,8 +609,8 @@ def main():
     parser.add_argument(
         '--baudrate',
         type=int,
-        default=115200,
-        help='Vitesse de communication (défaut: 115200)'
+        default=921600,
+        help='Vitesse de communication (défaut: 921600)'
     )
     parser.add_argument(
         '--points',
