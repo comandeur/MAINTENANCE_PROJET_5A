@@ -9,6 +9,7 @@ import serial.tools.list_ports
 import struct
 import threading
 import time
+import re
 from datetime import datetime
 from collections import deque
 import tkinter as tk
@@ -58,6 +59,18 @@ class STM32MicMonitor:
 
         # Conversion ADC -> mV (12-bit ADC, 3.3V reference)
         self.ADC_TO_MV = 3300.0 / 4096.0  # ~0.806 mV par LSB
+
+        # Classification IA
+        self.CLASS_NAMES = {
+            0: "Main Ouverte",
+            1: "Main Fermee (Poing)",
+            2: "Pouce + Index Fermes",
+            3: "Pouce + Index + Majeur Fermes",
+            4: "Index Ferme",
+        }
+        self.detected_class = -1
+        self.detected_class_name = ""
+        self.detected_confidence = 0.0
 
     def connect(self):
         """Établit la connexion série avec la STM32"""
@@ -120,6 +133,7 @@ class STM32MicMonitor:
                                         msg = uart_text_buffer.hex(' ')
                                     if msg:
                                         print(f"[UART] {msg}")
+                                        self._parse_uart_message(msg)
                                     uart_text_buffer.clear()
                             else:
                                 uart_text_buffer.append(byte)
@@ -207,6 +221,17 @@ class STM32MicMonitor:
             self.thread.join(timeout=2)
             print("Thread de lecture arrêté")
 
+    def _parse_uart_message(self, msg):
+        """Parse les messages UART pour extraire les infos de classification IA"""
+        # Format: ">>> GAGNANT: Classe 3 (85.2%)"
+        m = re.search(r'GAGNANT:\s*Classe\s+(\d+)\s*\((\d+\.?\d*)%\)', msg)
+        if m:
+            cls = int(m.group(1))
+            conf = float(m.group(2))
+            self.detected_class = cls
+            self.detected_confidence = conf
+            self.detected_class_name = self.CLASS_NAMES.get(cls, f"Classe {cls}")
+
     def clear_data(self):
         """Vide toutes les données collectées"""
         self.data['time'].clear()
@@ -251,6 +276,19 @@ class MonitorGUI:
         self.port_label = tk.Label(self.info_frame, text=f"Port: {monitor.port}",
                                    font=("Arial", 10))
         self.port_label.pack(side=tk.LEFT, padx=20)
+
+        # Frame pour la classification IA
+        self.class_frame = tk.Frame(root, bg="#2c3e50")
+        self.class_frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=(0, 5))
+
+        self.class_label = tk.Label(self.class_frame, text="Geste: En attente...",
+                                    font=("Arial", 16, "bold"), fg="white", bg="#2c3e50",
+                                    pady=5)
+        self.class_label.pack(side=tk.LEFT, padx=20)
+
+        self.confidence_label = tk.Label(self.class_frame, text="",
+                                         font=("Arial", 12), fg="#bdc3c7", bg="#2c3e50")
+        self.confidence_label.pack(side=tk.LEFT, padx=10)
 
         # Frame pour les controles
         ctrl_frame = tk.Frame(self.info_frame)
@@ -464,6 +502,14 @@ class MonitorGUI:
         self.freq_label.config(text=f"Freq: {freq_inst:.1f} Hz (moy: {freq_avg:.2f} Hz)")
 
         self.samples_label.config(text=f"Samples: {self.monitor.sample_count}")
+
+        # Mise a jour classification IA
+        if self.monitor.detected_class >= 0:
+            name = self.monitor.detected_class_name
+            conf = self.monitor.detected_confidence
+            cls = self.monitor.detected_class
+            self.class_label.config(text=f"Geste: {name} (classe {cls})")
+            self.confidence_label.config(text=f"Confiance: {conf:.1f}%")
 
         self.root.after(200, self.update_info)
 
