@@ -104,6 +104,7 @@ class STM32MicMonitor:
         recv_buffer = bytearray()
         uart_text_buffer = bytearray()  # Accumule les octets non-protocole pour affichage texte
         aligned = False  # True quand l'alignement sur les paquets est confirmé
+        after_text = False  # True si on vient de consommer des octets texte ASCII
 
         # Vider le buffer série au démarrage (ignorer données corrompues)
         if self.serial_conn:
@@ -124,6 +125,11 @@ class STM32MicMonitor:
                             # Octet non-protocole : accumuler pour affichage texte
                             aligned = False
                             byte = recv_buffer.pop(0)
+                            # Si c'est un caractère ASCII imprimable ou newline → on vient du texte
+                            if 0x20 <= byte <= 0x7E or byte in (0x09, 0x0A, 0x0D):
+                                after_text = True
+                            else:
+                                after_text = False
                             self.skipped_bytes += 1
                             if byte == 0x0A or byte == 0x0D:  # \n ou \r
                                 if uart_text_buffer:
@@ -143,16 +149,23 @@ class STM32MicMonitor:
                         if len(recv_buffer) < self.BYTES_PER_SAMPLE:
                             break  # Attendre plus de données
 
-                        # Si pas encore aligné, valider avec double-header
+                        # Si pas encore aligné, valider l'alignement
                         if not aligned:
-                            if len(recv_buffer) < self.BYTES_PER_SAMPLE + 1:
-                                break  # Attendre le byte suivant pour valider
-                            if recv_buffer[self.BYTES_PER_SAMPLE] != self.HEADER_BYTE:
-                                # Faux 0xAA dans les données - on le saute
-                                recv_buffer.pop(0)
-                                self.skipped_bytes += 1
-                                continue
-                            aligned = True
+                            if after_text:
+                                # 0xAA après du texte ASCII → forcément un vrai header
+                                # (0xAA=170 n'existe pas en ASCII imprimable)
+                                aligned = True
+                                after_text = False
+                            else:
+                                # 0xAA après des octets binaires → double-header check
+                                if len(recv_buffer) < self.BYTES_PER_SAMPLE + 1:
+                                    break  # Attendre le byte suivant pour valider
+                                if recv_buffer[self.BYTES_PER_SAMPLE] != self.HEADER_BYTE:
+                                    # Faux 0xAA dans les données - on le saute
+                                    recv_buffer.pop(0)
+                                    self.skipped_bytes += 1
+                                    continue
+                                aligned = True
 
                         # Vider le buffer texte avant de traiter un paquet valide
                         if uart_text_buffer:
@@ -596,8 +609,8 @@ def main():
     parser.add_argument(
         '--baudrate',
         type=int,
-        default=921600,
-        help='Vitesse de communication (défaut: 921600)'
+        default=115200,
+        help='Vitesse de communication (défaut: 115200)'
     )
     parser.add_argument(
         '--points',
